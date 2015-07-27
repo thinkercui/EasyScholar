@@ -15,12 +15,15 @@ it is a pity that baidu scholar is wrong:
 class BDXS:
     def __init__(self):
         self.baseURL = "http://xueshu.baidu.com"
-
+        self.headers = {'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:39.0) Gecko/20100101 Firefox/39.0'}
+        
     def getURLByKW(self,kw):
         return self.baseURL + "/s?wd=" + urllib.quote_plus(kw)
     
     def getPageByURL(self,url):
-        html = urllib2.urlopen(url)
+        #perform like the browser
+        req = urllib2.Request(url = url,headers = self.headers)
+        html = urllib2.urlopen(req)
         return html
 
     def Parse(self,html):
