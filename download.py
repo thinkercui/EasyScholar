@@ -16,6 +16,7 @@ class BDXS:
     def __init__(self):
         self.baseURL = "http://xueshu.baidu.com"
         self.headers = {'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:39.0) Gecko/20100101 Firefox/39.0'}
+        self.depth = 3 
         
     def getURLByKW(self,kw):
         return self.baseURL + "/s?wd=" + urllib.quote_plus(kw)
@@ -28,6 +29,18 @@ class BDXS:
 
     def Parse(self,html):
         soup = BeautifulSoup(html.read(),'html.parser')
+        parent = soup.find("div",class_="sc_cite_hint")
+        page = soup.find("p",id="page")
+        nextpage = None
+        if page is not None:
+            nextpage = page.find("a",class_="n")
+        if parent is not None:
+            parent = parent.span.get_text()
+        if nextpage is not None:
+            if nextpage.get_text() is "下一页>":
+                nextpage = self.baseURL + nextpage["href"]
+            else:
+                nextpage = None
         #get all the paper it lists
         allPapers = []
         for paper in soup.find_all("div",class_="result xpath-log"):
@@ -36,6 +49,7 @@ class BDXS:
             #content
             content = paper.find("div",class_="sc_content")
             dic["name"] = content.find("h3").get_text()
+            dic["parent"] = parent
             dic["sc_info"] = content.find("div",class_="sc_info").get_text()
             dic["c_abstract"] = content.find("div",class_="c_abstract").get_text()
             dic["href_cited"] = None
@@ -52,10 +66,43 @@ class BDXS:
             href_related = related.find("a",class_="c-icon-file-hover")['href']
             dic["href_related"] = self.baseURL + href_related
             allPapers.append(dic)
-        return allPapers
+        return allPapers,nextpage
+
+    #set the depth of the spider(default is 3)
+    def setDepth(self,depth):
+        self.depth = depth
 
     #last in first out
     def getLIFO(self,url):
+        urlremain = []
+        urldepth = []
+        urldealed = []
+        allPapers = []
+        count = 0
+        urlremain.append(url)
+        urldepth.append(0)
+        while len(urlremain) is not 0:
+            print count,len(urlremain),len(urldealed)
+            count = count + 1
+            url = urlremain.pop()
+            pdepth = urldepth.pop()
+            if pdepth > self.depth:
+                continue
+            urldealed.append(url)
+            html = self.getPageByURL(url)
+            tmpPapers,nextpage = self.Parse(html)
+            allPapers.extend(tmpPapers)
+            for paper in tmpPapers:
+                if paper["href_cited"] is not None and paper["href_cited"] not in urlremain and paper["href_cited"] not in urldealed:
+                    urlremain.append(paper["href_cited"])
+                    urldepth.append(pdepth + 1)
+            if nextpage is not None:
+                urlremain.append(nextpage)
+                urldepth.append(pdepth)
+        return allPapers
+    
+    #first in first out(optional)
+    def getFIFO(self,url):
         urlremain = []
         urldealed = []
         allPapers = []
@@ -64,68 +111,54 @@ class BDXS:
         while len(urlremain) is not 0:
             print count,len(urlremain),len(urldealed)
             count = count + 1
-            url = urlremain.pop()
-            urldealed.append(url)
-            html = self.getPageByURL(url)
-            tmpPapers = self.Parse(html)
-            allPapers.extend(tmpPapers)
-            for paper in tmpPapers:
-                if paper["href_cited"] is not None and paper["href_cited"] not in urlremain and paper["href_cited"] not in urldealed:
-                    urlremain.append(paper["href_cited"])
-        
-        return allPapers
-    
-    #first in first out
-    def getFIFO(self,url):
-        urlremain = []
-        urldealed = []
-        allPapers = []
-        count = 0
-        urlremain.append(url)
-        while len(urlremain) is not 0:
-            print count
-            count = count + 1
             url = urlremain.pop(0)
             urldealed.append(url)
             html = self.getPageByURL(url)
-            tmpPapers = self.Parse(html)
+            tmpPapers,nextpage = self.Parse(html)
             allPapers.extend(tmpPapers)
             for paper in tmpPapers:
                 if paper["href_cited"] is not None and paper["href_cited"] not in urlremain and paper["href_cited"] not in urldealed:
                     urlremain.append(paper["href_cited"])
-        
+            if nextpage is not None:
+                urlremain.append(nextpage)        
         return allPapers
 
 if __name__=="__main__":
-    #"""
-    #only one page
-    bdxs = BDXS()
-    url = bdxs.getURLByKW("Is DNA a Language?")
-    html = bdxs.getPageByURL(url)
-    allPapers = bdxs.Parse(html)      
-
-    for paper in allPapers:
-        print "%s:%s"%("name",paper["name"])
-        print "%s:%s"%("sc_info",paper["sc_info"])
-        print "%s:%s"%("href_cited",paper["href_cited"])
-        print "%s:%s"%("href_related",paper["href_related"])
-        print "\n"
-    #"""
-
     """
-    #get all the pages
+    #only one page
+    #import pdb;pdb.set_trace();
     bdxs = BDXS()
     url = bdxs.getURLByKW("Is DNA a Language?")
     html = bdxs.getPageByURL(url)
     papers = bdxs.Parse(html)
+    url = papers[0]["href_cited"]
+    html = bdxs.getPageByURL(url)
+    allPapers = bdxs.Parse(html)
+
+    for paper in allPapers:
+        print "%s:%s"%("name",paper["name"])
+        print "%s:%s"%("parent",paper["parent"])
+        print "%s:%s"%("sc_info",paper["sc_info"])
+        #print "%s:%s"%("href_cited",paper["href_cited"])
+        #print "%s:%s"%("href_related",paper["href_related"])
+        print "\n"
+    """
+
+    #"""
+    #get all the pages
+    bdxs = BDXS()
+    url = bdxs.getURLByKW("Is DNA a Language?")
+    html = bdxs.getPageByURL(url)
+    papers,nextpage = bdxs.Parse(html)
     url = papers[0]["href_cited"]
     allPapers = bdxs.getLIFO(url)      
 
     for paper in allPapers:
         print "%s:%s"%("name",paper["name"])
         print "%s:%s"%("sc_info",paper["sc_info"])
-        print "%s:%s"%("href_cited",paper["href_cited"])
-        print "%s:%s"%("href_related",paper["href_related"])
+        print "%s:%s"%("sc_info",paper["sc_info"])
+        #print "%s:%s"%("href_cited",paper["href_cited"])
+        #print "%s:%s"%("href_related",paper["href_related"])
         print "\n"
-    """
+    #"""
     
